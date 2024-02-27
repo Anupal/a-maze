@@ -174,6 +174,14 @@ class Maze:
         else:
             return i, j
 
+    def _perform_action(self, state, action):
+        next_state = (state[0] + _directions[action][0], state[1] + _directions[action][1])
+        if 0 <= next_state[0] < self.grid_height and 0 <= next_state[1] < self.grid_width \
+                and not self.maze[next_state[0]][next_state[1]]:
+            return next_state
+        else:
+            return state
+
     def display_mdp_policy(self, policy):
         print(policy)
 
@@ -191,117 +199,112 @@ class Maze:
             policy_grid += "\n"
         print(policy_grid)
 
+    def _reward(self, state):
+        return 0 if state == self.exit else -1
+
     def solve_mdppit(self):
         # create initial random policy
-        policy = np.random.randint(0, 4, size=self.maze.shape)
+        # policy = np.random.randint(0, 4, size=self.maze.shape)
+        policy = np.zeros(self.maze.shape, dtype=np.int8)
         policy[self.maze == 1] = -1
 
-        value_function, discount_factor, loops, theta = np.zeros(self.maze.shape), 0.99, 0, 1e-4
-
-        reward = np.full(self.maze.shape, -0.5)
-        reward[self.exit] = 1
+        value_function, discount_factor, loops, theta = np.zeros(self.maze.shape), 0.9, 0, 1e-2
+        states = [(i, j) for j in range(self.grid_width) for i in range(self.grid_height) if self.maze[i][j] == 0]
 
         while True:
             # policy evaluation phase
             while True:
                 delta = 0
-                for i in range(self.grid_height):
-                    for j in range(self.grid_width):
-                        if self.maze[i, j] == 1:
-                            continue
-                        current_value = value_function[i, j]
-                        next_ij = self._mdp_agent_step(i, j, policy[i, j])
-                        value_function[i, j] = reward[i, j] + discount_factor * value_function[next_ij]
+                for state in states:
+                    if state == self.exit:
+                        continue
 
-                        delta = max(delta, abs(current_value - value_function[i, j]))
-                        loops += 1
+                    current_value = value_function[state[0]][state[1]]
+                    next_state = self._perform_action(state, policy[state[0]][state[1]])
+                    value_function[state[0]][state[1]] = self._reward(state) + discount_factor * value_function[next_state[0]][next_state[1]]
+                    delta = max(delta, abs(current_value - value_function[state[0]][state[1]]))
+
+                    loops += 1
+
                 if delta < theta:
                     break
 
             # policy improvement phase
             policy_stable = True
-            for i in range(self.grid_height):
-                for j in range(self.grid_width):
-                    if self.maze[i, j] == 1:
-                        continue
-                    old_action = policy[i, j]
-                    action_values = []
-                    for action in range(4):
-                        next_ij = self._mdp_agent_step(i, j, action)
-                        action_values.append(reward[i, j] + discount_factor * value_function[next_ij])
-                        loops += 1
-                    best_action = np.argmax(action_values)
-                    policy[i, j] = best_action
-                    if old_action != best_action:
-                        policy_stable = False
+            for state in states:
+                if state == self.exit:
+                    continue
+
+                old_action = policy[state[0]][state[1]]
+                action_values = []
+                for action in range(4):
+                    next_state = self._perform_action(state, action)
+                    action_values.append(self._reward(state) + discount_factor * value_function[next_state[0]][next_state[1]])
+                    loops += 1
+                best_action = np.argmax(action_values)
+                policy[state[0]][state[1]] = best_action
+                if old_action != best_action:
+                    policy_stable = False
 
             if policy_stable:
                 break
 
-        # generate and return path
-        path, current_ij = [self.entry], self.entry
-        while current_ij != self.exit:
-            action = policy[current_ij]
-            next_ij = self._mdp_agent_step(current_ij[0], current_ij[1], action)
-            if current_ij == next_ij:
-                print(f"warning: exiting MDP policy iteration due to incorrect policy, maze dimenstions=({self.height}x{self.width})")
+        # generate return path
+        path, state = [self.entry], self.entry
+        while state != self.exit:
+            action = policy[state[0]][state[1]]
+            next_state = self._perform_action(state, action)
+            if state == next_state:
+                print(f"warning: exiting MDP policy iteration due to incorrect policy, maze dimenstions=({self.height}x{self.width})", flush=True)
                 return [], [], loops
-            current_ij = next_ij
-            path.append(current_ij)
+            state = next_state
+            path.append(state)
 
         return path, [], loops
 
     def solve_mdpvit(self):
         # create initial random policy
-        policy = np.random.randint(0, 4, size=self.maze.shape)
+        policy = np.zeros(self.maze.shape, dtype=np.int8)
         policy[self.maze == 1] = -1
 
-        value_function, discount_factor, loops, theta = np.zeros(self.maze.shape), 0.99, 0, 1e-4
+        value_function, discount_factor, loops, theta = np.zeros(self.maze.shape), 0.99, 0, 1e-2
+        states = [(i, j) for j in range(self.grid_width) for i in range(self.grid_height) if self.maze[i][j] == 0]
 
-        reward = np.full(self.maze.shape, -0.5)
-        reward[self.exit] = 1
 
         while True:
             delta = 0
-            for i in range(self.grid_height):
-                for j in range(self.grid_width):
-                    if self.maze[i, j] == 1:
-                        continue
-                    v = value_function[i, j]
-                    action_values = []
-                    for action in range(4):  # For each action, calculate value
-                        next_ij = self._mdp_agent_step(i, j, action)
-                        action_values.append(reward[i, j] + discount_factor * value_function[next_ij])
-                        loops += 1
-                    best_value = max(action_values)
-                    value_function[i, j] = best_value
-                    delta = max(delta, abs(v - best_value))
-            if delta < theta:  # Stop if change in value function is small
+            for state in states:
+                if state == self.exit:
+                    continue
+                current_value = value_function[state[0]][state[1]]
+                action_values = []
+                for action in range(4):  # For each action, calculate value
+                    next_state = self._perform_action(state, action)
+                    action_values.append(self._reward(state) + discount_factor * value_function[next_state[0]][next_state[1]])
+                    loops += 1
+
+                best_action = np.argmax(action_values)
+                policy[state[0]][state[1]] = best_action
+
+                best_value = action_values[best_action]
+                value_function[state[0]][state[1]] = best_value
+                delta = max(delta, abs(current_value - best_value))
+
+            if delta < theta:
                 break
 
-        # Derive policy from value function
-        for i in range(self.grid_height):
-            for j in range(self.grid_width):
-                if self.maze[i, j] == 1:
-                    continue
-                action_values = []
-                for action in range(4):
-                    next_ij = self._mdp_agent_step(i, j, action)
-                    action_values.append(reward[i, j] + discount_factor * value_function[next_ij])
-                    loops += 1
-                best_action = np.argmax(action_values)
-                policy[i, j] = best_action
-
-        # Generate and return path from policy
-        path, current_ij = [self.entry], self.entry
-        while current_ij != self.exit:
-            action = policy[current_ij]
-            next_ij = self._mdp_agent_step(current_ij[0], current_ij[1], action)
-            if current_ij == next_ij:  # Check for stuck in the same place (invalid policy)
-                print(f"warning: exiting MDP value iteration due to incorrect policy, maze dimenstions=({self.height}x{self.width})")
+        # generate return path
+        path, state = [self.entry], self.entry
+        while state != self.exit:
+            action = policy[state[0]][state[1]]
+            next_state = self._perform_action(state, action)
+            if state == next_state:
+                print(
+                    f"warning: exiting MDP value iteration due to incorrect policy, maze dimenstions=({self.height}x{self.width})",
+                    flush=True)
                 return [], [], loops
-            current_ij = next_ij
-            path.append(current_ij)
+            state = next_state
+            path.append(state)
 
         return path, [], loops
 
