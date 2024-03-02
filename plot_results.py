@@ -3,7 +3,11 @@ import matplotlib.pyplot as plt
 
 
 def main():
-    data = pd.read_csv("results.csv")
+    result_file_name = input("Enter result file name (results.csv): ")
+    if not result_file_name:
+        result_file_name = "results.csv"
+
+    data = pd.read_csv(result_file_name)
 
     data = data.groupby(["maze_size", "algorithm"]).mean().reset_index()
 
@@ -11,12 +15,11 @@ def main():
 
     # exit()
 
-    # Separate data for each algorithm
-    dfs_data = data[data["algorithm"] == "DFS"]
-    bfs_data = data[data["algorithm"] == "BFS"]
-    astar_data = data[data["algorithm"] == "ASTAR"]
-    mdppit_data = data[data["algorithm"] == "MDPPIT"]
-    mdpvit_data = data[data["algorithm"] == "MDPVIT"]
+    algorithms = data["algorithm"].unique()
+
+    algorithm_data = {}
+    for algorithm in algorithms:
+        algorithm_data[algorithm] = data[data["algorithm"] == algorithm]
 
     # Define the columns to be plotted
     columns_to_plot = [
@@ -24,7 +27,6 @@ def main():
         "path_length",
         "nodes_visited",
         "loops",
-        "memory_min",
         "memory_max",
     ]
 
@@ -32,20 +34,8 @@ def main():
     for col in columns_to_plot:
         plt.figure(figsize=(12, 6))
 
-        # Plot DFS data
-        plt.plot(dfs_data["maze_size"], dfs_data[col], label="DFS")
-
-        # Plot BFS data
-        plt.plot(bfs_data["maze_size"], bfs_data[col], label="BFS")
-
-        # Plot A* data
-        plt.plot(astar_data["maze_size"], astar_data[col], label="ASTAR")
-
-        # Plot MDP Policy Iteration data
-        plt.plot(mdppit_data["maze_size"], mdppit_data[col], label="MDP Policy Iteration")
-
-        # Plot MDP Value Iteration data
-        plt.plot(mdpvit_data["maze_size"], mdpvit_data[col], label="MDP Value Iteration")
+        for algorithm in algorithms:
+            plt.plot(algorithm_data[algorithm]["maze_size"], algorithm_data[algorithm][col], label=algorithm)
 
         # Add labels and title
         plt.xlabel("Maze Size")
