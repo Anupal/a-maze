@@ -1,7 +1,7 @@
 import maze
 import time
 import pandas as pd
-from memory_profiler import memory_usage
+import tracemalloc
 
 
 def test_performance(func: callable):
@@ -15,7 +15,10 @@ def test_performance(func: callable):
         return test_performance(func)
 
     print("      memory", flush=True)
-    mem_usage, retval = memory_usage(func, interval=0.1, include_children=True, retval=True)
+    tracemalloc.start()
+    retval = func()
+    mem_usage = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
 
     if not retval[0]:
         print("     retrying...", flush=True)
@@ -37,7 +40,9 @@ def main():
 
     result_file_name = input("Enter result file name (results.csv): ")
     if not result_file_name:
-        result_file_name = "results.csv"
+        result_file_name = "results/results.csv"
+    else:
+        result_file_name = "results/" + result_file_name
 
     df, i = pd.DataFrame(columns=["maze_size", "algorithm", "exec_time", "path_length", "nodes_visited", "loops", "memory_min", "memory_max"]), 0
     df["exec_time"] = df["exec_time"].astype(float)
@@ -65,7 +70,7 @@ def main():
 
     print("Collected results:")
     print(df)
-    print("Saving to 'results.csv'")
+    print(f"Saving to '{result_file_name}'")
     df.to_csv(result_file_name, index=False)
 
 

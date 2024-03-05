@@ -12,7 +12,7 @@ def get_test_params(func, heuristic):
 
 
 def comparison():
-    test_maze_sizes = [50, 100, 1500, 2000]
+    test_maze_sizes = [50, 100, 500]
     options = ["euclidean", "manhattan", "both"]
     exec_times_tab, path_len_tab = {}, {}
 

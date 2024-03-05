@@ -1,6 +1,6 @@
 import heapq
 import math
-from random import choice, random
+from random import choice, random, seed
 from collections import deque
 
 import numpy as np
@@ -8,9 +8,8 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 
 
-
+seed(999)
 _maze_cmap = ListedColormap(['white', 'black', 'blue', 'red', 'yellow'])
-
 _directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
 
@@ -76,7 +75,7 @@ class Maze:
         _maze[self.entry[0], self.entry[1]] = 4
         _maze[self.exit[0], self.exit[1]] = 4
 
-        plt.figure(figsize=(self.grid_width, self.grid_height))
+        plt.figure() #figsize=(self.grid_width, self.grid_height))
         plt.imshow(_maze, cmap=_maze_cmap, interpolation="nearest")
         plt.xticks([]), plt.yticks([])
 
@@ -124,7 +123,15 @@ class Maze:
                     queue.append(next_ij)
                     tracker[next_ij] = (i, j)
 
-    def solve_astar(self):
+    def _heuristic(self, p1, p2, h):
+        if h == "euclidean":
+            return math.sqrt((p2[0] - p1[0]) ** 2 + (p2[1] - p1[1]) ** 2)
+        elif h == "manhattan":
+            return abs(p2[0] - p1[0]) + abs(p2[1] - p1[1])
+        elif h == "both":
+            return abs(p2[0] - p1[0]) + abs(p2[1] - p1[1]) + math.sqrt((p2[0] - p1[0]) ** 2 + (p2[1] - p1[1]) ** 2)
+
+    def solve_astar(self, heuristic="both"):
         node_count = 1
         open_list, open_list_tracker, closed_list, loops = [(0, 0, {"g": 0, "f": 0, "ij": self.entry, "prev": None})], {
             self.entry}, {}, 0
@@ -158,21 +165,12 @@ class Maze:
                         "prev": curr_node,
                         "ij": next_ij,
                         "g": curr_node["g"] + 1,
-                        "h": (self.exit[0] - next_ij[0] + self.exit[1] - next_ij[1]) + math.sqrt(
-                            (self.exit[0] - next_ij[0]) ** 2 + (self.exit[1] - next_ij[1]) ** 2)
+                        "h": self._heuristic(next_ij, self.exit, heuristic)
                     }
 
                     heapq.heappush(open_list, (child["h"] + child["g"], node_count, child))
                     node_count += 1
                     open_list_tracker.add(child["ij"])
-
-    def _mdp_agent_step(self, i, j, action):
-        next_ij = (i + _directions[action][0], j + _directions[action][1])
-        if 0 <= next_ij[0] < self.grid_height and 0 <= next_ij[1] < self.grid_width \
-                and not self.maze[next_ij[0]][next_ij[1]]:
-            return next_ij
-        else:
-            return i, j
 
     def _perform_action(self, state, action):
         next_state = (state[0] + _directions[action][0], state[1] + _directions[action][1])
@@ -183,32 +181,40 @@ class Maze:
             return state
 
     def display_mdp_policy(self, policy):
-        print(policy)
-
         mapping = {
             (-1, 0): "↑",
             (1, 0): "↓",
             (0, -1): "←",
             (0, 1): "→"
         }
-        policy_grid = ""
-
+        table_data = []
         for i in range(policy.shape[0]):
+            row_data = []
             for j in range(policy.shape[1]):
-                policy_grid += mapping[_directions[policy[i, j]]] if policy[i, j] != -1 else "█"
-            policy_grid += "\n"
-        print(policy_grid)
+                if policy[i, j] != -1:  # Check if the state is not blocked
+                    row_data.append(mapping[_directions[policy[i, j]]])
+                else:  # For blocked states
+                    row_data.append(" ")
+            table_data.append(row_data)
+
+        fig_width, fig_height = policy.shape[1] * 0.2, policy.shape[0] * 0.2
+        fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+        ax.axis('tight')
+        ax.axis('off')
+
+        ax.table(cellText=table_data, cellLoc='center', loc='center', edges='closed')
+
+        plt.tight_layout()
 
     def _reward(self, state):
-        return 0 if state == self.exit else -1
+        return 1 if state == self.exit else -0.01
 
-    def solve_mdppit(self):
+    def solve_mdppit(self, discount_factor=0.99, theta=1e-4):
         # create initial random policy
-        # policy = np.random.randint(0, 4, size=self.maze.shape)
-        policy = np.zeros(self.maze.shape, dtype=np.int8)
+        policy = np.random.randint(0, 4, size=self.maze.shape)
         policy[self.maze == 1] = -1
 
-        value_function, discount_factor, loops, theta = np.zeros(self.maze.shape), 0.9, 0, 1e-2
+        value_function, loops = np.zeros(self.maze.shape), 0
         states = [(i, j) for j in range(self.grid_width) for i in range(self.grid_height) if self.maze[i][j] == 0]
 
         while True:
@@ -255,21 +261,23 @@ class Maze:
             action = policy[state[0]][state[1]]
             next_state = self._perform_action(state, action)
             if state == next_state:
-                print(f"warning: exiting MDP policy iteration due to incorrect policy, maze dimenstions=({self.height}x{self.width})", flush=True)
+                print(f"warning: exiting MDP policy iteration due to incorrect policy, maze dimenstions=({self.height}x{self.width})"
+                      f" gamma={discount_factor} theta={theta}", flush=True)
+                self.display_mdp_policy(policy)
                 return [], [], loops
             state = next_state
             path.append(state)
 
+        self.display_mdp_policy(policy)
         return path, [], loops
 
-    def solve_mdpvit(self):
+    def solve_mdpvit(self, discount_factor=0.99, theta=1e-4):
         # create initial random policy
-        policy = np.zeros(self.maze.shape, dtype=np.int8)
+        policy = np.random.randint(0, 4, size=self.maze.shape)
         policy[self.maze == 1] = -1
 
-        value_function, discount_factor, loops, theta = np.zeros(self.maze.shape), 0.99, 0, 1e-2
+        value_function, loops = np.zeros(self.maze.shape), 0
         states = [(i, j) for j in range(self.grid_width) for i in range(self.grid_height) if self.maze[i][j] == 0]
-
 
         while True:
             delta = 0
@@ -278,7 +286,7 @@ class Maze:
                     continue
                 current_value = value_function[state[0]][state[1]]
                 action_values = []
-                for action in range(4):  # For each action, calculate value
+                for action in range(4):
                     next_state = self._perform_action(state, action)
                     action_values.append(self._reward(state) + discount_factor * value_function[next_state[0]][next_state[1]])
                     loops += 1
@@ -300,12 +308,14 @@ class Maze:
             next_state = self._perform_action(state, action)
             if state == next_state:
                 print(
-                    f"warning: exiting MDP value iteration due to incorrect policy, maze dimenstions=({self.height}x{self.width})",
-                    flush=True)
+                    f"warning: exiting MDP value iteration due to incorrect policy, maze dimenstions=({self.height}x{self.width})"
+                    f" gamma={discount_factor} theta={theta}", flush=True)
+                self.display_mdp_policy(policy)
                 return [], [], loops
             state = next_state
             path.append(state)
 
+        self.display_mdp_policy(policy)
         return path, [], loops
 
     def display_final(self):
